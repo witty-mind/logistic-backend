@@ -8,15 +8,24 @@ from app import models, schemas, crud
 from app.core.security import get_current_active_user
 from app.db.session import get_db
 
-router = APIRouter()
+router = APIRouter(tags=["Feedback Management"])
 
-@router.post("/", response_model=schemas.FeedbackRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/", 
+    response_model=schemas.FeedbackRead, 
+    status_code=status.HTTP_201_CREATED,
+    summary="Submit new feedback",
+    description="Allows an authenticated user to submit feedback, optionally linking it to one of their shipments.",
+    responses={
+        status.HTTP_404_NOT_FOUND: {"description": "Shipment not found or not owned by user (if shipment_id provided)."},
+        status.HTTP_401_UNAUTHORIZED: {"description": "User not authenticated."},
+    }
+)
 async def create_feedback_endpoint(
     feedback_in: schemas.FeedbackCreate,
     db_session: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ):
-    # Optional: Validate if shipment_id belongs to the user if provided
     if feedback_in.shipment_id:
         shipment = await crud.crud_shipment.get_shipment_by_id(db_session=db_session, shipment_id=feedback_in.shipment_id)
         if not shipment or shipment.user_id != current_user.id:
@@ -30,21 +39,29 @@ async def create_feedback_endpoint(
     )
     return feedback
 
-@router.get("/shipment/{shipment_id}", response_model=List[schemas.FeedbackRead])
+@router.get(
+    "/shipment/{shipment_id}", 
+    response_model=List[schemas.FeedbackRead],
+    summary="Get feedback for a specific shipment",
+    description="Retrieves all feedback associated with a specific shipment ID. Requires the authenticated user to own the shipment or be an admin (admin logic not implemented).",
+    responses={
+        status.HTTP_404_NOT_FOUND: {"description": "Shipment not found."},
+        status.HTTP_403_FORBIDDEN: {"description": "Not authorized to view feedback for this shipment."},
+        status.HTTP_401_UNAUTHORIZED: {"description": "User not authenticated."},
+    }
+)
 async def get_feedback_for_shipment_endpoint(
     shipment_id: uuid.UUID,
     db_session: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ):
-    # Validate that the user has rights to this shipment's feedback
-    # (e.g., user owns the shipment or is an admin)
     shipment = await crud.crud_shipment.get_shipment_by_id(db_session=db_session, shipment_id=shipment_id)
     if not shipment:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Shipment not found.",
         )
-    if shipment.user_id != current_user.id: # Add admin check if needed
+    if shipment.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to view feedback for this shipment.",
@@ -55,7 +72,15 @@ async def get_feedback_for_shipment_endpoint(
     )
     return feedback_list
 
-@router.get("/user/me", response_model=List[schemas.FeedbackRead])
+@router.get(
+    "/user/me", 
+    response_model=List[schemas.FeedbackRead],
+    summary="Get feedback submitted by the current user",
+    description="Retrieves all feedback submitted by the currently authenticated user.",
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "User not authenticated."},
+    }
+)
 async def get_my_feedback_endpoint(
     db_session: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),

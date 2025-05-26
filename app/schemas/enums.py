@@ -8,3 +8,8 @@ class ShipmentStatusEnum(str, Enum):
     FAILED_DELIVERY = "failed_delivery"
     PICKUP_SCHEDULED = "pickup_scheduled"
     OUT_FOR_DELIVERY = "out_for_delivery"
+
+class PricingTierEnum(str, Enum):
+    EXPRESS = "EXPRESS"
+    STANDARD = "STANDARD"
+    ECONOMY = "ECONOMY"

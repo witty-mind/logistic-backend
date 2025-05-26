@@ -15,12 +15,13 @@ asyncpg = "^0.28.0"
 python-jose = {extras = ["cryptography"], version = "^3.3.0"}
 passlib = {extras = ["bcrypt"], version = "^1.7.4"}
 alembic = "^1.12.0"
-pytest = "^7.4.2"
+# pytest = "^7.4.2" # Removed from main dependencies
 httpx = "^0.25.0"
 slowapi = "^0.1.8"
 
 [tool.poetry.group.dev.dependencies]
-pytest = "^7.4.2"
+pytest = "^7.4.2" # Ensure it's here
+# httpx = "^0.25.0" # Add httpx here if it's only for testing
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

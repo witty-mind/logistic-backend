@@ -10,9 +10,20 @@ from app.db.session import get_db
 from app.services import shipment_service
 from app.crud import crud_shipment
 
-router = APIRouter()
+router = APIRouter(tags=["Shipment Management"])
 
-@router.post("/", response_model=schemas.ShipmentRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/", 
+    response_model=schemas.ShipmentRead, 
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new shipment",
+    description="Allows an authenticated user to create a new shipment. The cost is calculated automatically based on the selected service level.",
+    responses={
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {"description": "An error occurred while creating the shipment."},
+        status.HTTP_401_UNAUTHORIZED: {"description": "User not authenticated."},
+        status.HTTP_422_UNPROCESSABLE_ENTITY: {"description": "Validation error (e.g., invalid service level)."}
+    }
+)
 async def create_shipment_endpoint(
     shipment_in: schemas.ShipmentCreate,
     db_session: AsyncSession = Depends(get_db),
@@ -23,31 +34,53 @@ async def create_shipment_endpoint(
             db_session=db_session, shipment_in=shipment_in, user_id=current_user.id
         )
         return shipment
-    except Exception as e:
+    except ValueError as ve: # Catch specific errors like invalid service level
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(ve),
+        )
+    except Exception:
         # Log the exception e
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while creating the shipment.",
         )
 
-@router.get("/", response_model=List[schemas.ShipmentRead])
+@router.get(
+    "/", 
+    response_model=List[schemas.ShipmentRead],
+    summary="List shipments for the current user",
+    description="Retrieves a list of shipments created by the currently authenticated user. Supports pagination and filtering by status.",
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "User not authenticated."},
+    }
+)
 async def get_user_shipments_endpoint(
     db_session: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
-    status: Optional[schemas.ShipmentStatusEnum] = None, # Use the Enum for validation
+    status: Optional[schemas.ShipmentStatusEnum] = None,
     skip: int = 0,
     limit: int = 100,
 ):
     shipments = await crud_shipment.get_shipments_by_user_id(
         db_session=db_session, 
         user_id=current_user.id, 
-        status=status.value if status else None, # Pass the enum's value
+        status=status.value if status else None,
         skip=skip, 
         limit=limit
     )
     return shipments
 
-@router.get("/{tracking_number}", response_model=schemas.ShipmentRead)
+@router.get(
+    "/{tracking_number}", 
+    response_model=schemas.ShipmentRead,
+    summary="Get a specific shipment by tracking number",
+    description="Retrieves details for a specific shipment using its tracking number. Requires the authenticated user to own the shipment.",
+    responses={
+        status.HTTP_404_NOT_FOUND: {"description": "Shipment not found or user not authorized."},
+        status.HTTP_401_UNAUTHORIZED: {"description": "User not authenticated."},
+    }
+)
 async def get_shipment_by_tracking_number_endpoint(
     tracking_number: str,
     db_session: AsyncSession = Depends(get_db),
@@ -61,46 +94,46 @@ async def get_shipment_by_tracking_number_endpoint(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Shipment not found.",
         )
-    # Ensure the user owns this shipment or is an admin (admin check not implemented here)
     if shipment.user_id != current_user.id:
-        # Depending on security policy, either 403 or 404 can be returned.
-        # 404 can prevent leaking information about existing tracking numbers.
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, # Or status.HTTP_403_FORBIDDEN
+            status_code=status.HTTP_404_NOT_FOUND, 
             detail="Shipment not found or not authorized.",
         )
     return shipment
 
-@router.patch("/{shipment_id}/status", response_model=schemas.ShipmentRead)
+@router.patch(
+    "/{shipment_id}/status", 
+    response_model=schemas.ShipmentRead,
+    summary="Update a shipment's status",
+    description="Allows an authenticated user to update the status of a shipment they own. (Further business logic for status transitions might apply).",
+    responses={
+        status.HTTP_404_NOT_FOUND: {"description": "Shipment not found."},
+        status.HTTP_403_FORBIDDEN: {"description": "Not authorized to update this shipment's status."},
+        status.HTTP_401_UNAUTHORIZED: {"description": "User not authenticated."},
+    }
+)
 async def update_shipment_status_endpoint(
     shipment_id: uuid.UUID,
     status_update: schemas.ShipmentStatusUpdate,
     db_session: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ):
-    # Retrieve the shipment by ID
     shipment = await crud_shipment.get_shipment_by_id(
         db_session=db_session, shipment_id=shipment_id
     )
 
-    # Check if shipment exists
     if not shipment:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Shipment not found.",
         )
 
-    # Security Check: Verify ownership
     if shipment.user_id != current_user.id:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, # Or 404 to obscure existence
+            status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to update this shipment's status.",
         )
 
-    # Business Logic: Simplified - allow update to any valid status
-    # In a real app, add checks here, e.g., user can only cancel 'pending'
-
-    # Update the shipment status
     updated_shipment = await crud_shipment.update_shipment_status(
         db_session=db_session, 
         shipment_id=shipment_id, 
@@ -108,10 +141,8 @@ async def update_shipment_status_endpoint(
     )
     
     if not updated_shipment:
-        # This case should ideally be covered by the initial get_shipment_by_id check,
-        # but as a safeguard:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=status.HTTP_404_NOT_FOUND, # Should be rare if first check passes
             detail="Shipment not found during update.",
         )
         

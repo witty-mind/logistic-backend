@@ -11,12 +11,13 @@ from typing import Optional
 
 
 async def create_shipment(
-    db_session: AsyncSession, *, shipment_in: ShipmentCreate, user_id: uuid.UUID, tracking_number: str
+    db_session: AsyncSession, *, shipment_in: ShipmentCreate, user_id: uuid.UUID, tracking_number: str, cost: float
 ) -> Shipment:
     db_shipment = Shipment(
         **shipment_in.model_dump(), 
         user_id=user_id, 
-        tracking_number=tracking_number
+        tracking_number=tracking_number,
+        cost=cost  # Assign the calculated cost
     )
     db_session.add(db_shipment)
     await db_session.commit()
